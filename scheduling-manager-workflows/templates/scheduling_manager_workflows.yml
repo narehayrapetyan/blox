@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+
+  GetDeploymentDataLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+       Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.GetDeploymentData
+       Runtime: java8
+       CodeUri: ../build/distributions/scheduling-manager-workflows.zip
+       Timeout: 60
+       MemorySize: 256
+       Policies:
+       - Version: '2012-10-17' # Policy Document
+         Statement:
+           - Effect: Allow
+             Action:
+               - dynamodb:GetItem
+               - dynamodb:PutItem
+               - dynamodb:UpdateItem
+               - dynamodb:Query
+             Resource: !Sub
+               'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Deployments'
+
+  GetStateDataLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.GetStateData
+      Runtime: java8
+      CodeUri: ../build/distributions/scheduling-manager-workflows.zip
+      Timeout: 60
+      MemorySize: 256
+      Policies:
+      - Version: '2012-10-17' # Policy Document
+        Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:Query
+            Resource: !Sub
+              'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Deployments'
+
+  StartDeploymentLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.StartDeployment
+      Runtime: java8
+      CodeUri: ../build/distributions/scheduling-manager-workflows.zip
+      Timeout: 60
+      MemorySize: 256
+      Policies:
+      - Version: '2012-10-17' # Policy Document
+        Statement:
+          - Effect: Allow
+            Action:
+              - stepfunctions:StartExecution
+            Resource: !Sub
+              - 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine/${StartTaskWorkflowName}'
+              - StartTaskWorkflowName: !GetAtt [ StartTaskWorkflow, Name ]
+
+  StartTaskLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.StartTask
+      Runtime: java8
+      CodeUri: ../build/distributions/scheduling-manager-workflows.zip
+      Timeout: 60
+      MemorySize: 256
+      #role
+
+  CheckTaskStateLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.CheckTaskState
+      Runtime: java8
+      CodeUri: ../build/distributions/scheduling-manager-workflows.zip
+      Timeout: 60
+      MemorySize: 256
+      #role
+
+  StartTaskWorkflow:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "StartAt": "StartTask",
+              "States": {
+                "StartTask": {
+                  "Type": "Task",
+                  "Resource": "${StartTaskLambdaArn}",
+                  "Next": "CheckTaskState"
+                },
+                "WaitForJobStatus": {
+                  "Type": "Wait",
+                  "SecondsPath": "$.wait_time",
+                  "Next": "CheckTaskState"
+                },
+                "CheckTaskState": {
+                  "Type" : "Task",
+                  "Resource": "${CheckTaskStateLambdaArn}",
+                  "Next": "Task Running?"
+                },
+                "Task Running?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "FAILED",
+                      "Next": "Job Failed"
+                    },
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "RUNNING",
+                      "Next": "SuccessState"
+                    }
+                  ],
+                  "Default": "WaitForJobStatus"
+                },
+                "Job Failed": {
+                  "Type": "Fail",
+                  "Cause": "Task Failed",
+                  "Error": ""
+                },
+                "SuccessState": {
+                  "Type": "Succeed"
+                }
+              }
+            }
+          - StartTaskLambdaArn: !GetAtt [ StartTaskLambda, Arn ]
+            CheckTaskStateLambdaArn: !GetAtt [ CheckTaskStateLambda, Arn ]
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+
+  DeploymentWorkflow:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "StartAt": "GetDeploymentData",
+              "States": {
+                "GetDeploymentData": {
+                  "Type": "Task",
+                  "Resource": "${GetDeploymentDataLambdaArn}",
+                  "Next": "GetStateData"
+                },
+                "GetStateData": {
+                  "Type" : "Task",
+                  "Resource": "${GetStateDataLambdaArn}",
+                  "Next": "StartDeployment"
+                },
+                "StartDeployment": {
+                  "Type" : "Task",
+                  "Resource": "${StartDeploymentLambdaArn}",
+                  "End": true
+                }
+              }
+            }
+          - GetDeploymentDataLambdaArn: !GetAtt [ GetDeploymentDataLambda, Arn ]
+            GetStateDataLambdaArn: !GetAtt [ GetStateDataLambda, Arn ]
+            StartDeploymentLambdaArn: !GetAtt [ StartDeploymentLambda, Arn ]
+      RoleArn: !GetAtt [ StatesExecutionRole, Arn ]
+
+  StatesExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - !Sub states.${AWS::Region}.amazonaws.com
+            Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: StatesExecutionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:InvokeFunction"
+                Resource: "*"

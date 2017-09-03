@@ -10,4 +10,4 @@ include 'data-service-client'
 include 'data-service'
 include 'end-to-end-tests'
 include 'scheduling-manager'
-
+include 'scheduling-manager-workflows'

@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  CheckTaskStateLambda:
+    Properties:
+      CodeUri: s3://us-east-1-blox-scheduler-manager/165705e3a6bb48e9a8686e624e0eed00
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.CheckTaskState
+      MemorySize: 256
+      Runtime: java8
+      Timeout: 60
+    Type: AWS::Serverless::Function
+  DeploymentWorkflow:
+    Properties:
+      DefinitionString:
+        Fn::Sub:
+        - "{\n  \"StartAt\": \"GetDeploymentData\",\n  \"States\": {\n    \"GetDeploymentData\"\
+          : {\n      \"Type\": \"Task\",\n      \"Resource\": \"${GetDeploymentDataLambdaArn}\"\
+          ,\n      \"Next\": \"GetStateData\"\n    },\n    \"GetStateData\": {\n \
+          \     \"Type\" : \"Task\",\n      \"Resource\": \"${GetStateDataLambdaArn}\"\
+          ,\n      \"Next\": \"StartDeployment\"\n    },\n    \"StartDeployment\"\
+          : {\n      \"Type\" : \"Task\",\n      \"Resource\": \"${StartDeploymentLambdaArn}\"\
+          ,\n      \"End\": true\n    }\n  }\n}"
+        - GetDeploymentDataLambdaArn:
+            Fn::GetAtt:
+            - GetDeploymentDataLambda
+            - Arn
+          GetStateDataLambdaArn:
+            Fn::GetAtt:
+            - GetStateDataLambda
+            - Arn
+          StartDeploymentLambdaArn:
+            Fn::GetAtt:
+            - StartDeploymentLambda
+            - Arn
+      RoleArn:
+        Fn::GetAtt:
+        - StatesExecutionRole
+        - Arn
+    Type: AWS::StepFunctions::StateMachine
+  GetDeploymentDataLambda:
+    Properties:
+      CodeUri: s3://us-east-1-blox-scheduler-manager/165705e3a6bb48e9a8686e624e0eed00
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.GetDeploymentData
+      MemorySize: 256
+      Policies:
+      - Statement:
+        - Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:UpdateItem
+          - dynamodb:Query
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Deployments
+        Version: '2012-10-17'
+      Runtime: java8
+      Timeout: 60
+    Type: AWS::Serverless::Function
+  GetStateDataLambda:
+    Properties:
+      CodeUri: s3://us-east-1-blox-scheduler-manager/165705e3a6bb48e9a8686e624e0eed00
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.GetStateData
+      MemorySize: 256
+      Policies:
+      - Statement:
+        - Action:
+          - dynamodb:GetItem
+          - dynamodb:PutItem
+          - dynamodb:Query
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Deployments
+        Version: '2012-10-17'
+      Runtime: java8
+      Timeout: 60
+    Type: AWS::Serverless::Function
+  StartDeploymentLambda:
+    Properties:
+      CodeUri: s3://us-east-1-blox-scheduler-manager/165705e3a6bb48e9a8686e624e0eed00
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.StartDeployment
+      MemorySize: 256
+      Policies:
+      - Statement:
+        - Action:
+          - stepfunctions:StartExecution
+          Effect: Allow
+          Resource:
+            Fn::Sub:
+            - arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine/${StartTaskWorkflowName}
+            - StartTaskWorkflowName:
+                Fn::GetAtt:
+                - StartTaskWorkflow
+                - Name
+        Version: '2012-10-17'
+      Runtime: java8
+      Timeout: 60
+    Type: AWS::Serverless::Function
+  StartTaskLambda:
+    Properties:
+      CodeUri: s3://us-east-1-blox-scheduler-manager/165705e3a6bb48e9a8686e624e0eed00
+      Handler: com.amazonaws.blox.schedulingmanager.deployment.handler.StartTask
+      MemorySize: 256
+      Runtime: java8
+      Timeout: 60
+    Type: AWS::Serverless::Function
+  StartTaskWorkflow:
+    Properties:
+      DefinitionString:
+        Fn::Sub:
+        - "{\n  \"StartAt\": \"StartTask\",\n  \"States\": {\n    \"StartTask\": {\n\
+          \      \"Type\": \"Task\",\n      \"Resource\": \"${StartTaskLambdaArn}\"\
+          ,\n      \"Next\": \"CheckTaskState\"\n    },\n    \"WaitForJobStatus\"\
+          : {\n      \"Type\": \"Wait\",\n      \"SecondsPath\": \"$.wait_time\",\n\
+          \      \"Next\": \"CheckTaskState\"\n    },\n    \"CheckTaskState\": {\n\
+          \      \"Type\" : \"Task\",\n      \"Resource\": \"${CheckTaskStateLambdaArn}\"\
+          ,\n      \"Next\": \"Task Running?\"\n    },\n    \"Task Running?\": {\n\
+          \      \"Type\": \"Choice\",\n      \"Choices\": [\n        {\n        \
+          \  \"Variable\": \"$.status\",\n          \"StringEquals\": \"FAILED\",\n\
+          \          \"Next\": \"Job Failed\"\n        },\n        {\n          \"\
+          Variable\": \"$.status\",\n          \"StringEquals\": \"RUNNING\",\n  \
+          \        \"Next\": \"SuccessState\"\n        }\n      ],\n      \"Default\"\
+          : \"WaitForJobStatus\"\n    },\n    \"Job Failed\": {\n      \"Type\": \"\
+          Fail\",\n      \"Cause\": \"Task Failed\",\n      \"Error\": \"\"\n    },\n\
+          \    \"SuccessState\": {\n      \"Type\": \"Succeed\"\n    }\n  }\n}"
+        - CheckTaskStateLambdaArn:
+            Fn::GetAtt:
+            - CheckTaskStateLambda
+            - Arn
+          StartTaskLambdaArn:
+            Fn::GetAtt:
+            - StartTaskLambda
+            - Arn
+      RoleArn:
+        Fn::GetAtt:
+        - StatesExecutionRole
+        - Arn
+    Type: AWS::StepFunctions::StateMachine
+  StatesExecutionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - Fn::Sub: states.${AWS::Region}.amazonaws.com
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - lambda:InvokeFunction
+            Effect: Allow
+            Resource: '*'
+          Version: '2012-10-17'
+        PolicyName: StatesExecutionPolicy
+    Type: AWS::IAM::Role
+Transform: AWS::Serverless-2016-10-31
