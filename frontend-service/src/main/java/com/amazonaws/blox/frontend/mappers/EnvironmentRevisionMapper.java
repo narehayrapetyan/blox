@@ -12,17 +12,19 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
-package com.amazonaws.blox.dataservicemodel.v1.exception;
+package com.amazonaws.blox.frontend.mappers;
 
-public class ResourceNotFoundException extends ClientException {
+import com.amazonaws.blox.frontend.models.EnvironmentRevision;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 
-  private String resourceType;
-  private String resourceId;
+@Mapper
+public interface EnvironmentRevisionMapper {
+  // TODO: Add TaskCounts to DataService
+  @Mapping(target = "counts", ignore = true)
+  EnvironmentRevision fromDataService(
+      com.amazonaws.blox.dataservicemodel.v1.model.EnvironmentRevision environmentRevision);
 
-  public ResourceNotFoundException(String resourceType, String resourceId) {
-    super(String.format("%s with id %s could not be found", resourceType, resourceId));
-
-    this.resourceType = resourceType;
-    this.resourceId = resourceId;
-  }
+  com.amazonaws.blox.dataservicemodel.v1.model.EnvironmentRevision toDataService(
+      EnvironmentRevision environmentRevision);
 }

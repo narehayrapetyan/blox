@@ -12,17 +12,16 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
-package com.amazonaws.blox.dataservicemodel.v1.exception;
+package com.amazonaws.blox.frontend.mappers;
 
-public class ResourceNotFoundException extends ClientException {
+import com.amazonaws.blox.dataservicemodel.v1.model.DeploymentConfiguration;
+import org.mapstruct.Mapper;
 
-  private String resourceType;
-  private String resourceId;
+@Mapper
+public interface DeploymentConfigurationMapper {
+  DeploymentConfiguration toDataService(
+      com.amazonaws.blox.frontend.models.DeploymentConfiguration value);
 
-  public ResourceNotFoundException(String resourceType, String resourceId) {
-    super(String.format("%s with id %s could not be found", resourceType, resourceId));
-
-    this.resourceType = resourceType;
-    this.resourceId = resourceId;
-  }
+  com.amazonaws.blox.frontend.models.DeploymentConfiguration fromDataService(
+      DeploymentConfiguration value);
 }
