@@ -14,6 +14,7 @@
  */
 package com.amazonaws.blox.dataservicemodel.v1.model.wrappers;
 
+import com.amazonaws.blox.dataservicemodel.v1.model.Cluster;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -28,5 +29,5 @@ import lombok.NonNull;
 // required for mapstruct
 @NoArgsConstructor
 public class ListClustersResponse {
-  @NonNull private List<String> clusters;
+  @NonNull private List<Cluster> clusters;
 }
